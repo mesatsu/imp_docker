@@ -1,24 +1,39 @@
-#Base: Uma imagem com o Go instalado para compilar
-FROM golang:1.25.3
+# ---- Estágio de Build ----
+FROM golang:1.25.3-alpine AS builder
 
-#Define o diretório de trabalho dentro do contêiner
+# Define o diretório de trabalho dentro do container
 WORKDIR /app
 
-#Copia os arquivos de gerenciamento de dependências
+# Copia e baixa as dependências primeiro
 COPY go.mod ./
-#COPY go.sum ./
-
-#Baixa as dependências
 RUN go mod download
 
-#Copia todo o resto do código-fonte
+# Copia o restante do código-fonte
 COPY . .
 
-#Compila a aplicação
-RUN go build -o /server ./cmd/server
+# Compila a aplicação em modo estático (sem dependências de libc)
+# - CGO desabilitado => binário 100% estático
+# - GOOS=linux => compatível com a imagem final
+# - -ldflags="-w -s" => remove debug symbols (menor tamanho)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /server ./cmd/server
 
-#Expõe a porta que a aplicação usa
+# ---- Estágio Final (imagem mínima para produção) ----
+FROM alpine:3.20
+
+# Cria um usuário e grupo não-root para segurança
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Define o diretório de trabalho
+WORKDIR /app
+
+# Copia apenas o binário compilado do estágio de build
+COPY --from=builder /server /app/server
+
+# Expõe a porta usada pela aplicação
 EXPOSE 8080
 
-#Comando para executar a aplicação quando o contêiner iniciar
-CMD ["/server"]
+# Troca para o usuário não-root
+USER appuser
+
+# Define o comando de inicialização
+CMD ["./server"]
