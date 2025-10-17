@@ -1,0 +1,28 @@
+# ===========================================
+# Go (Golang) padrões
+# ===========================================
+
+# Executáveis gerados por 'go build' ou 'go run'
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Diretórios de build e cache
+bin/
+build/
+out/
+dist/
+vendor/
+coverage/
+
+# Arquivos temporários do Go
+*.out
+*.log
+*.tmp
+
+# Módulos e cache de dependências
+go.work
+go.work.sum
