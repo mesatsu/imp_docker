@@ -1,0 +1,81 @@
+# Nome do workflow
+name: CI/CD Pipeline para API Go
+
+# Gatilhos
+on:
+  # Roda quando houver um push para a branch "main" ou em pull requests que têm a "main" como alvo
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Jobs: Define o trabalho a ser feito.
+jobs:
+  # Nome do nosso job principal
+  build-scan-and-push:
+    # Máquina virtual que o job rodará.
+    runs-on: ubuntu-latest
+
+    # Passos (steps) que serão executados em sequência
+    steps:
+      # Passo 1: Faz o checkout do seu código do repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # Passo 2: Configura o QEMU (necessário para o Buildx)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Passo 3: Configura o Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Passo 4: Login no Docker Hub usando os segredos que configuramos
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Passo 5: Build da imagem Docker
+      # A imagem é construída e carregada no runner local para ser escaneada
+      - name: Build da imagem Docker
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          # Não faz o push agora, apenas carrega a imagem para o próximo passo
+          load: true
+          # Define as tags da imagem. Usa o SHA do commit para versionamento único.
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/minha-api:${{ github.sha }}
+
+      # Passo 6: Scan de vulnerabilidades com Trivy
+      # A pipeline falhará se encontrar vulnerabilidades críticas ou altas
+      - name: Scan da imagem com Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          # Referencia a imagem construída no passo anterior
+          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/minha-api:${{ github.sha }}'
+          format: 'table'
+          # Falha o build se encontrar vulnerabilidades CRITICAL ou HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # Passo 7: Push para o Docker Hub
+      # Este passo só executa se o evento for um PUSH para a branch MAIN
+      # e se os passos anteriores (incluindo o scan do Trivy) foram bem-sucedidos
+      - name: Push da imagem para o Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          # Faz o push
+          push: true
+          # Define as tags. Uma com o SHA do commit e a outra como "latest"
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/minha-api:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/minha-api:latest
